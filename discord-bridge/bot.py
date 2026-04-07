@@ -12,7 +12,7 @@ import os
 LITELLM_URL = os.environ["LITELLM_URL"]
 LITELLM_KEY = os.environ["LITELLM_KEY"]
 DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", "workhorse")
-CODER_MODEL = "coder"
+CODER_MODEL = "Coder"
 GUILD_ID = int(os.environ["DISCORD_GUILD_ID"])
 # Canal onde o bot responde a TODAS as mensagens sem precisar de @
 # Deixar vazio para desactivar auto-resposta

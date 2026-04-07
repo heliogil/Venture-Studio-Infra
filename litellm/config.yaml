@@ -1,34 +1,34 @@
 model_list:
-  # Barato — triagem, classificação, FAQ, formatação
-  - model_name: cheap
+  # Rapido — triagem, classificação, FAQ, formatação
+  - model_name: Rapido
     litellm_params:
       model: openrouter/google/gemini-flash-1.5-8b
       api_key: os.environ/OPENROUTER_API_KEY
       api_base: https://openrouter.ai/api/v1
 
-  # Workhorse — BOT 01 default (pesquisa, síntese, planeamento, escrita)
-  - model_name: workhorse
+  # Geral — BOT 01 default (pesquisa, síntese, planeamento, escrita)
+  - model_name: Geral
     litellm_params:
       model: openrouter/qwen/qwen3-235b-a22b
       api_key: os.environ/OPENROUTER_API_KEY
       api_base: https://openrouter.ai/api/v1
 
   # Coder — BOT 02 (código, debug, arquitectura técnica)
-  - model_name: coder
+  - model_name: Coder
     litellm_params:
       model: openrouter/deepseek/deepseek-r1
       api_key: os.environ/OPENROUTER_API_KEY
       api_base: https://openrouter.ai/api/v1
 
-  # Review — revisão crítica, validação (gatilho manual)
-  - model_name: review
+  # Revisor — revisão crítica, validação (gatilho manual)
+  - model_name: Revisor
     litellm_params:
       model: openrouter/anthropic/claude-sonnet-4-6
       api_key: os.environ/OPENROUTER_API_KEY
       api_base: https://openrouter.ai/api/v1
 
   # Nuclear — arquitectura fundacional (só gatilho explícito)
-  - model_name: nuclear
+  - model_name: Nuclear
     litellm_params:
       model: openrouter/anthropic/claude-opus-4-6
       api_key: os.environ/OPENROUTER_API_KEY
@@ -42,10 +42,10 @@ litellm_settings:
 router_settings:
   routing_strategy: simple-shuffle
   fallbacks:
-    - workhorse:
-        - cheap
-    - coder:
-        - workhorse
+    - Geral:
+        - Rapido
+    - Coder:
+        - Geral
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
