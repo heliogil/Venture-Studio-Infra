@@ -1,0 +1,53 @@
+model_list:
+  # Barato — triagem, classificação, FAQ, formatação
+  - model_name: cheap
+    litellm_params:
+      model: openrouter/google/gemini-flash-1.5-8b
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+
+  # Workhorse — BOT 01 default (pesquisa, síntese, planeamento, escrita)
+  - model_name: workhorse
+    litellm_params:
+      model: openrouter/qwen/qwen3-235b-a22b
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+
+  # Coder — BOT 02 (código, debug, arquitectura técnica)
+  - model_name: coder
+    litellm_params:
+      model: openrouter/deepseek/deepseek-r1
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+
+  # Review — revisão crítica, validação (gatilho manual)
+  - model_name: review
+    litellm_params:
+      model: openrouter/anthropic/claude-sonnet-4-6
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+
+  # Nuclear — arquitectura fundacional (só gatilho explícito)
+  - model_name: nuclear
+    litellm_params:
+      model: openrouter/anthropic/claude-opus-4-6
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+
+litellm_settings:
+  max_budget: 2.0
+  budget_duration: 1d
+  store_model_in_db: true
+
+router_settings:
+  routing_strategy: simple-shuffle
+  fallbacks:
+    - workhorse:
+        - cheap
+    - coder:
+        - workhorse
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/LITELLM_DATABASE_URL
+  store_prompts_in_spend_logs: false
