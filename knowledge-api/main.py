@@ -42,6 +42,7 @@ class SearchRequest(BaseModel):
     query: str
     limit: int = 5
     score_threshold: float = 0.50
+    mode: str = "hybrid"  # "semantic" | "keyword" | "hybrid"
 
 
 class IndexRequest(BaseModel):
@@ -68,29 +69,79 @@ async def search(req: SearchRequest):
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="Query vazia")
 
-    embedding = await embed(req.query)
-
     conn = get_conn()
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        cur.execute(
-            """
-            SELECT source_path, title, content,
-                   1 - (embedding <=> %s::vector) AS score
-            FROM documents
-            WHERE embedding IS NOT NULL
-            ORDER BY embedding <=> %s::vector
-            LIMIT %s
-            """,
-            (json.dumps(embedding), json.dumps(embedding), req.limit * 2),
-        )
-        rows = cur.fetchall()
+
+        if req.mode == "keyword":
+            # Busca por palavras-chave exactas (tsvector)
+            cur.execute(
+                """
+                SELECT source_path, title, content,
+                       ts_rank(fts, plainto_tsquery('portuguese', %s)) AS score
+                FROM documents
+                WHERE fts @@ plainto_tsquery('portuguese', %s)
+                ORDER BY score DESC
+                LIMIT %s
+                """,
+                (req.query, req.query, req.limit),
+            )
+            rows = cur.fetchall()
+            results = []
+            for row in rows:
+                score = float(row["score"])
+                if score < 0.01:
+                    continue
+                results.append(SearchResult(
+                    source_path=row["source_path"],
+                    title=row["title"],
+                    content_snippet=row["content"][:500],
+                    score=round(min(score, 1.0), 4),
+                ))
+            return results
+
+        # Semântica (sempre necessária para hybrid e semantic)
+        embedding = await embed(req.query)
+        vec = json.dumps(embedding)
+
+        if req.mode == "semantic":
+            cur.execute(
+                """
+                SELECT source_path, title, content,
+                       1 - (embedding <=> %s::vector) AS score
+                FROM documents
+                WHERE embedding IS NOT NULL
+                ORDER BY embedding <=> %s::vector
+                LIMIT %s
+                """,
+                (vec, vec, req.limit * 2),
+            )
+            rows = cur.fetchall()
+
+        else:  # hybrid — semântica + keyword, re-ranked
+            cur.execute(
+                """
+                SELECT source_path, title, content,
+                       (1 - (embedding <=> %s::vector)) AS sem_score,
+                       COALESCE(ts_rank(fts, plainto_tsquery('portuguese', %s)), 0) AS kw_score
+                FROM documents
+                WHERE embedding IS NOT NULL
+                ORDER BY
+                    (0.7 * (1 - (embedding <=> %s::vector)) +
+                     0.3 * COALESCE(ts_rank(fts, plainto_tsquery('portuguese', %s)), 0)) DESC
+                LIMIT %s
+                """,
+                (vec, req.query, vec, req.query, req.limit * 2),
+            )
+            rows = cur.fetchall()
+
     finally:
         conn.close()
 
     results = []
     for row in rows:
-        score = float(row["score"])
+        score = float(row["score"] if req.mode == "semantic" else
+                      0.7 * float(row["sem_score"]) + 0.3 * float(row["kw_score"]))
         if score < req.score_threshold:
             continue
         results.append(SearchResult(
