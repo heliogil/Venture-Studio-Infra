@@ -95,3 +95,91 @@ Cada sessão custa:
 ```
 
 Revisão de custo: ver `http://37.60.236.227:4000/ui` → Spend Logs.
+
+---
+
+## 7. Regras de Controlo de Tokens (obrigatório em bots autónomos)
+
+### 7.1 Lei fundamental
+```
+POLLING / SCHEDULING  = código Python puro         → zero tokens
+BUDGET CHECK          = HTTP GET /spend/logs        → zero tokens
+LLM                   = só com tarefa real + budget → tokens gastos
+NOTIFICAÇÕES          = Discord webhook HTTP        → zero tokens
+```
+
+**O orquestrador é código, não LLM. O LLM é o trabalhador, não o gestor.**
+
+### 7.2 Padrão de guarda obrigatório
+
+Todo o bot autónomo que chama LLM deve implementar este padrão antes de QUALQUER chamada:
+
+```python
+def check_daily_budget(litellm_url: str, litellm_key: str,
+                        limit_usd: float = 1.50) -> tuple[float, bool]:
+    """Verifica spend do dia. Retorna (spend_actual, dentro_do_limite)."""
+    try:
+        with httpx.Client(timeout=10) as http:
+            resp = http.get(
+                f"{litellm_url}/spend/logs",
+                headers={"Authorization": f"Bearer {litellm_key}"},
+            )
+            entries = resp.json().get("data", [])
+            total = sum(float(e.get("spend", 0)) for e in entries)
+            return total, total < limit_usd
+    except Exception:
+        return 0.0, True  # em caso de erro, assume OK (não bloqueia)
+
+# Uso obrigatório antes de qualquer chamada LLM:
+spend, ok = check_daily_budget(LITELLM_URL, LITELLM_KEY)
+if not ok:
+    logger.warning(f"Budget atingido (${spend:.2f}). Tarefa adiada.")
+    queue_for_later(task)  # nunca cancela — sempre adia
+    return
+```
+
+### 7.3 Prioridade de processamento em lote
+
+```
+1. alta   → processar primeiro, mesmo perto do limite
+2. media  → processar se budget > 30% do limite restante
+3. baixa  → processar só se budget > 60% do limite restante
+```
+
+### 7.4 Comportamento quando budget esgota a meio do lote
+
+```python
+# NÃO fazer: cancelar tarefas restantes
+# FAZER: pausar, notificar, retomar no próximo ciclo
+
+if not dentro_budget:
+    notify_discord(
+        f"BOT XX: Budget atingido (${spend:.2f}/$1.50). "
+        f"{restantes} tarefas adiadas para o próximo ciclo."
+    )
+    return  # o scheduler retoma automaticamente no próximo intervalo
+```
+
+### 7.5 Consumo em idle (referência)
+
+| Componente | Tokens/dia em idle | Custo |
+|------------|-------------------|-------|
+| vault_sync (poll Dropbox 15min) | 0 | $0 |
+| task_runner (poll pasta 30min) | 0 | $0 |
+| health_check (HTTP GET horário) | 0 | $0 |
+| cost_report (HTTP GET diário) | 0 | $0 |
+| discord_bridge (WebSocket passivo) | 0 | $0 |
+| **LLM por mensagem do utilizador** | ~500-1500 | variável |
+| **LLM por tarefa Coder** | ~1000-2000 | variável |
+
+RAM por container Python em idle: ~30-50 MB. CPU: ~0%.
+
+### 7.6 Anti-padrões proibidos
+
+```
+NUNCA colocar LLM no loop de polling
+NUNCA fazer retry automático sem verificar budget
+NUNCA usar modelo pesado (Revisor/Nuclear) em tarefas automáticas
+NUNCA chamar LLM para decidir se deve chamar LLM
+NUNCA usar streaming em bots autónomos (mais tokens, sem benefício)
+```
