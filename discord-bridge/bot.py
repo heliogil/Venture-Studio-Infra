@@ -1,7 +1,8 @@
 """
 discord-bridge/bot.py
 Bot Discord para acesso ao Venture Studio.
-Slash commands: /ask (BOT 01), /code (BOT 02), /status
+- Slash commands: /ask, /code, /status
+- Auto-resposta: responde a qualquer mensagem no canal BOT_CHANNEL_ID (sem @)
 """
 import discord
 from discord import app_commands
@@ -13,6 +14,9 @@ LITELLM_KEY = os.environ["LITELLM_KEY"]
 DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", "workhorse")
 CODER_MODEL = "coder"
 GUILD_ID = int(os.environ["DISCORD_GUILD_ID"])
+# Canal onde o bot responde a TODAS as mensagens sem precisar de @
+# Deixar vazio para desactivar auto-resposta
+BOT_CHANNEL_ID = int(os.environ["BOT_CHANNEL_ID"]) if os.environ.get("BOT_CHANNEL_ID") else None
 
 BOT01_SYSTEM = """Você é o assistente pessoal do Hélio Gil, do Venture Studio.
 Respostas concisas em PT-BR. Bullets > parágrafos. Termine com '→ Próximo passo:'."""
@@ -48,13 +52,29 @@ async def call_llm(model: str, system: str, user_msg: str, max_tokens: int = 100
     if "choices" in data:
         return data["choices"][0]["message"]["content"]
     err = data.get("error", {})
-    return f"⚠️ Erro: {err.get('message', str(data))}"
+    return f"Erro: {err.get('message', str(data))}"
 
 
 def truncate(text: str, limit: int = 1900) -> str:
     if len(text) <= limit:
         return text
     return text[:limit] + "\n*(truncado — abrir Open WebUI para resposta completa)*"
+
+
+@client.event
+async def on_message(message: discord.Message):
+    # Ignorar mensagens do próprio bot
+    if message.author.bot:
+        return
+    # Auto-responder apenas no canal configurado
+    if BOT_CHANNEL_ID and message.channel.id != BOT_CHANNEL_ID:
+        return
+    if not BOT_CHANNEL_ID:
+        return  # Sem canal configurado, não auto-responde
+
+    async with message.channel.typing():
+        resposta = await call_llm(DEFAULT_MODEL, BOT01_SYSTEM, message.content)
+    await message.reply(truncate(resposta), mention_author=False)
 
 
 @tree.command(
@@ -94,9 +114,9 @@ async def cmd_status(interaction: discord.Interaction):
                 f"{LITELLM_URL}/health/liveliness",
                 headers={"Authorization": f"Bearer {LITELLM_KEY}"},
             )
-            health = "✅ LiteLLM online" if resp.status_code == 200 else f"⚠️ {resp.status_code}"
+            health = "LiteLLM online" if resp.status_code == 200 else f"HTTP {resp.status_code}"
         except Exception as e:
-            health = f"❌ LiteLLM offline: {e}"
+            health = f"LiteLLM offline: {e}"
 
     msg = (
         f"**Venture Studio — Status**\n"
@@ -110,7 +130,8 @@ async def cmd_status(interaction: discord.Interaction):
 @client.event
 async def on_ready():
     await tree.sync(guild=discord.Object(id=GUILD_ID))
-    print(f"Discord Bridge online: {client.user} | Guild: {GUILD_ID}")
+    ch = f"canal {BOT_CHANNEL_ID}" if BOT_CHANNEL_ID else "auto-resposta desactivada"
+    print(f"Discord Bridge online: {client.user} | Guild: {GUILD_ID} | {ch}")
 
 
 client.run(os.environ["DISCORD_TOKEN"])
