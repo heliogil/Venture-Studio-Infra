@@ -31,11 +31,11 @@ async def embed(text: str) -> List[float]:
     """Gera embedding via Ollama (nomic-embed-text, 768 dimensões)."""
     async with httpx.AsyncClient(timeout=60) as http:
         resp = await http.post(
-            f"{OLLAMA_URL}/api/embeddings",
-            json={"model": EMBED_MODEL, "prompt": text[:8000]},
+            f"{OLLAMA_URL}/api/embed",
+            json={"model": EMBED_MODEL, "input": text[:8000]},
         )
         resp.raise_for_status()
-        return resp.json()["embedding"]
+        return resp.json()["embeddings"][0]
 
 
 class SearchRequest(BaseModel):
